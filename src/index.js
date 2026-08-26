@@ -14,6 +14,7 @@ const { makeLeaderAwareJob } = require('./jobs/leaderAwareJob');
 const { warmCache } = require('./startup/cacheWarm');
 const buildCorsMiddleware = require('./middleware/cors');
 const buildRateLimit = require('./middleware/rateLimit');
+const { docsCspMiddleware } = require('./middleware/csp');
 const { requestIdMiddleware } = require('./middleware/requestId');
 const { requireApiKey } = require('./middleware/auth');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -166,6 +167,7 @@ app.use('/api/v1', indexerRouter);
 app.use('/api/v1', webhooksRouter);
 app.use('/api/v1', airdropsRouter);
 app.use('/api-docs', globalApiLimit);
+app.use('/api-docs', docsCspMiddleware);
 app.use('/api-docs', apiDocsRouter);
 
 app.use(notFoundHandler);

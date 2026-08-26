@@ -8,6 +8,7 @@ const signature = require('./webhookSignature');
 const events = require('./webhookEvents');
 const webhookRepo = require('../repositories/webhookRepository');
 const deliveryRepo = require('../repositories/deliveryRepository');
+const { assertPublicTarget } = require('./ssrfGuard');
 
 const USER_AGENT = 'SmartDrop-Webhooks/1.0';
 
@@ -60,11 +61,20 @@ function buildHeaders(secret, body, eventType, deliveryId) {
 }
 
 async function postOnce(url, headers, body) {
-  return axios.post(url, body, {
-    headers,
+  // assertPublicTarget re-resolves + re-validates the target at request time
+  // (closing the DNS-rebinding window) and pins the connection to a validated
+  // public IP. `maxRedirects: 0` stops a 30x from bouncing us onto an
+  // unvalidated internal address.
+  const { targetUrl, host } = await assertPublicTarget(url);
+  const requestHeaders = { ...headers };
+  if (host) requestHeaders.Host = host;
+
+  return axios.post(targetUrl, body, {
+    headers: requestHeaders,
     timeout: config.webhooks.timeoutMs,
     transformRequest: [(data) => data],
     validateStatus: () => true,
+    maxRedirects: 0,
   });
 }
 
@@ -168,6 +178,11 @@ async function attempt(deliveryId) {
 }
 
 async function deliverToWebhook(webhook, eventType, eventId, payload) {
+  // Validate the target before doing any work so a blocked (private/internal)
+  // target is refused up front with a clear error rather than recorded as a
+  // failed delivery. postOnce re-validates at connect time for defense in depth.
+  await assertPublicTarget(webhook.url);
+
   const delivery = await deliveryRepo.create({
     webhook_id: webhook.id,
     event_id: eventId,

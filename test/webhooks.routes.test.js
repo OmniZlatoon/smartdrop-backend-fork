@@ -15,6 +15,15 @@ jest.mock('../src/logger', () => ({
 const mockAxiosPost = jest.fn();
 jest.mock('axios', () => ({ post: (...args) => mockAxiosPost(...args) }));
 
+// Mock the SSRF guard so registration/delivery-time target validation does not
+// perform live DNS resolution in unit tests (the real guard's behavior is
+// covered by test/webhooks.ssrf.test.js).
+jest.mock('../src/services/ssrfGuard', () => ({
+  assertPublicTarget: jest.fn(async (url) => ({ targetUrl: url, host: null })),
+  assertPublicUrlSync: jest.fn((url) => url),
+  isPrivateIp: jest.fn(() => false),
+}));
+
 const webhooksRouter = require('../src/routes/webhooks');
 
 function buildApp() {

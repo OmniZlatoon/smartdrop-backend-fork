@@ -5,6 +5,7 @@ const ERROR_CODES = Object.freeze({
   UNAUTHORIZED: { statusCode: 401 },
   NOT_FOUND: { statusCode: 404 },
   PAYLOAD_TOO_LARGE: { statusCode: 413 },
+  WEBHOOK_TARGET_BLOCKED: { statusCode: 422 },
   RATE_LIMITED: { statusCode: 429 },
   UPSTREAM_ERROR: { statusCode: 502 },
   INTERNAL_ERROR: { statusCode: 500 },
