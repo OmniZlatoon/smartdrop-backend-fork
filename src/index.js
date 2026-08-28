@@ -1,64 +1,74 @@
-'use strict';
+"use strict";
 
-const express = require('express');
-const compression = require('compression');
-const helmet = require('helmet');
-const config = require('./config');
-const { version: appVersion } = require('../package.json');
-const logger = require('./logger');
-const cache = require('./services/cache');
-const priceOracle = require('./services/priceOracle');
-const priceRefreshJob = require('./jobs/priceRefresh');
-const webhookRetryWorker = require('./jobs/webhookRetryWorker');
-const airdropExpiryJob = require('./jobs/airdropExpiry');
-const { createLeaderElection } = require('./services/leaderElection');
-const { makeLeaderAwareJob } = require('./jobs/leaderAwareJob');
-const { warmCache } = require('./startup/cacheWarm');
-const buildCorsMiddleware = require('./middleware/cors');
-const { buildRateLimit, buildApiKeyRateLimit } = require('./middleware/rateLimit');
-const { requestIdMiddleware } = require('./middleware/requestId');
-const requestLoggerMiddleware = require('./middleware/requestLogger');
-const { requireApiKey, attachApiKey } = require('./middleware/auth');
-const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const { checkDatabase } = require('./services/dbHealth');
-const pricesRouter = require('./routes/prices');
-const alertsRouter = require('./routes/alerts');
-const indexerRouter = require('./routes/indexer');
-const indexerPoller = require('./indexer/runtime');
-const keysRouter = require('./routes/keys');
-const webhooksRouter = require('./routes/webhooks');
-const airdropsRouter = require('./routes/airdrops');
-const apiDocsRouter = require('./routes/apiDocs');
-const { router: metricsRouter, requestMetricsMiddleware } = require('./routes/metrics');
+const express = require("express");
+const compression = require("compression");
+const helmet = require("helmet");
+const config = require("./config");
+const { version: appVersion } = require("../package.json");
+const logger = require("./logger");
+const cache = require("./services/cache");
+const priceOracle = require("./services/priceOracle");
+const priceRefreshJob = require("./jobs/priceRefresh");
+const webhookRetryWorker = require("./jobs/webhookRetryWorker");
+const airdropExpiryJob = require("./jobs/airdropExpiry");
+const { createLeaderElection } = require("./services/leaderElection");
+const { makeLeaderAwareJob } = require("./jobs/leaderAwareJob");
+const { warmCache } = require("./startup/cacheWarm");
+const buildCorsMiddleware = require("./middleware/cors");
+const {
+  buildRateLimit,
+  buildApiKeyRateLimit,
+} = require("./middleware/rateLimit");
+const { requestIdMiddleware } = require("./middleware/requestId");
+const requestLoggerMiddleware = require("./middleware/requestLogger");
+const {
+  requireApiKey,
+  attachApiKey,
+  auditApiKeyUsage,
+} = require("./middleware/auth");
+const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
+const { checkDatabase } = require("./services/dbHealth");
+const pricesRouter = require("./routes/prices");
+const alertsRouter = require("./routes/alerts");
+const indexerRouter = require("./routes/indexer");
+const indexerPoller = require("./indexer/runtime");
+const keysRouter = require("./routes/keys");
+const webhooksRouter = require("./routes/webhooks");
+const airdropsRouter = require("./routes/airdrops");
+const apiDocsRouter = require("./routes/apiDocs");
+const {
+  router: metricsRouter,
+  requestMetricsMiddleware,
+} = require("./routes/metrics");
 
-const priceWebSocket = require('./ws/priceWebSocket');
-const subscriptionManager = require('./ws/PriceSubscriptionManager');
-const webhookDispatcher = require('./services/webhookDispatcher');
+const priceWebSocket = require("./ws/priceWebSocket");
+const subscriptionManager = require("./ws/PriceSubscriptionManager");
+const webhookDispatcher = require("./services/webhookDispatcher");
 
 // Wrap background jobs with leader-election coordination so that only one
 // replica across the deployment runs each job at any given time.
 // See README.md#leader-election for design, failover timing, and configuration.
-const leaderElectionPriceRefresh = createLeaderElection('price_refresh');
-const leaderElectionWebhookRetry = createLeaderElection('webhook_retry');
-const leaderElectionAirdropExpiry = createLeaderElection('airdrop_expiry');
+const leaderElectionPriceRefresh = createLeaderElection("price_refresh");
+const leaderElectionWebhookRetry = createLeaderElection("webhook_retry");
+const leaderElectionAirdropExpiry = createLeaderElection("airdrop_expiry");
 
 const wrappedPriceRefreshJob = makeLeaderAwareJob({
   job: priceRefreshJob,
-  jobName: 'price_refresh',
+  jobName: "price_refresh",
   leaderElection: leaderElectionPriceRefresh,
   logger,
 });
 
 const wrappedWebhookRetryWorker = makeLeaderAwareJob({
   job: webhookRetryWorker,
-  jobName: 'webhook_retry',
+  jobName: "webhook_retry",
   leaderElection: leaderElectionWebhookRetry,
   logger,
 });
 
 const wrappedAirdropExpiryJob = makeLeaderAwareJob({
   job: airdropExpiryJob,
-  jobName: 'airdrop_expiry',
+  jobName: "airdrop_expiry",
   leaderElection: leaderElectionAirdropExpiry,
   logger,
 });
@@ -86,16 +96,19 @@ const EMPTY_QUEUE_STATS = {
 };
 
 async function readWebhookRetryQueueStats() {
-  if (typeof webhookRetryWorker.getQueueStats !== 'function') return EMPTY_QUEUE_STATS;
+  if (typeof webhookRetryWorker.getQueueStats !== "function")
+    return EMPTY_QUEUE_STATS;
   try {
     return await webhookRetryWorker.getQueueStats();
   } catch (err) {
-    logger.warn('Could not read webhook retry queue stats', { error: err.message });
+    logger.warn("Could not read webhook retry queue stats", {
+      error: err.message,
+    });
     return EMPTY_QUEUE_STATS;
   }
 }
 
-app.get('/health', async (req, res) => {
+app.get("/health", async (req, res) => {
   const redisConnected = cache.isConnected();
   const redisQueueDepth = cache.getCommandQueueLength();
   const redisConcurrency = cache.getConcurrencyStats();
@@ -118,14 +131,25 @@ app.get('/health', async (req, res) => {
   // aren't running locally), but that's expected — the leader is doing the
   // work. The health check distinguishes "not leader" from "stalled" via the
   // `leader` field.
-  let status = 'ok';
-  if (!redisConnected || !priceRefreshHealth.healthy || !webhookWorkerHealth.healthy || database.status === 'error') {
+  let status = "ok";
+  if (
+    !redisConnected ||
+    !priceRefreshHealth.healthy ||
+    !webhookWorkerHealth.healthy ||
+    database.status === "error"
+  ) {
     const jobsDegraded =
       (!priceRefreshHealth.healthy && !priceRefreshHealth.stalled) ||
       (!webhookWorkerHealth.healthy && !webhookWorkerHealth.stalled);
-    status = (!redisConnected || priceRefreshHealth.stalled || webhookWorkerHealth.stalled || database.status === 'error')
-      ? 'unhealthy'
-      : jobsDegraded ? 'degraded' : 'unhealthy';
+    status =
+      !redisConnected ||
+      priceRefreshHealth.stalled ||
+      webhookWorkerHealth.stalled ||
+      database.status === "error"
+        ? "unhealthy"
+        : jobsDegraded
+          ? "degraded"
+          : "unhealthy";
   }
 
   res.json({
@@ -196,30 +220,31 @@ app.get('/health', async (req, res) => {
   });
 });
 
-const apiKeyLimit = buildApiKeyRateLimit({ keyPrefix: 'apikey' });
+const apiKeyLimit = buildApiKeyRateLimit({ keyPrefix: "apikey" });
 
 const globalApiLimit = buildRateLimit({
   windowSeconds: Math.floor(config.rateLimit.windowMs / 1000),
   max: config.rateLimit.max,
-  keyPrefix: 'api',
+  keyPrefix: "api",
 });
 
 // Resolve any presented API key first so the per-key limiter can meter it,
 // then fall through to the IP-keyed limiter for unauthenticated callers.
 // Authentication itself is still enforced per-route by requireApiKey.
-app.use('/api/v1', attachApiKey());
-app.use('/api/v1', apiKeyLimit);
-app.use('/api/v1', globalApiLimit);
-app.use('/api/v1', pricesRouter);
-app.use('/api/v1', keysRouter);
-app.use('/api/v1/alerts', requireApiKey({ scopes: ['alerts'] }));
-app.use('/api/v1', alertsRouter);
-app.use('/api/v1', indexerRouter);
-app.use('/api/v1/webhooks', requireApiKey({ scopes: ['webhooks'] }));
-app.use('/api/v1', webhooksRouter);
-app.use('/api/v1', airdropsRouter);
-app.use('/api-docs', globalApiLimit);
-app.use('/api-docs', apiDocsRouter);
+app.use("/api/v1", attachApiKey());
+app.use("/api/v1", auditApiKeyUsage());
+app.use("/api/v1", apiKeyLimit);
+app.use("/api/v1", globalApiLimit);
+app.use("/api/v1", pricesRouter);
+app.use("/api/v1", keysRouter);
+app.use("/api/v1/alerts", requireApiKey({ scopes: ["alerts"] }));
+app.use("/api/v1", alertsRouter);
+app.use("/api/v1", indexerRouter);
+app.use("/api/v1/webhooks", requireApiKey({ scopes: ["webhooks"] }));
+app.use("/api/v1", webhooksRouter);
+app.use("/api/v1", airdropsRouter);
+app.use("/api-docs", globalApiLimit);
+app.use("/api-docs", apiDocsRouter);
 app.use(metricsRouter);
 
 app.use(notFoundHandler);
@@ -241,9 +266,12 @@ function shutdown(signal) {
 
     const remainingDeliveries = webhookDispatcher.getInFlightCount();
     if (remainingDeliveries > 0) {
-      logger.warn('Shutdown complete with in-flight webhook deliveries still pending', {
-        remaining: remainingDeliveries,
-      });
+      logger.warn(
+        "Shutdown complete with in-flight webhook deliveries still pending",
+        {
+          remaining: remainingDeliveries,
+        },
+      );
     }
 
     // Stop non-leader-elected services
@@ -270,11 +298,11 @@ function sanitizeUrl(rawUrl) {
   if (!rawUrl) return null;
   try {
     const parsed = new URL(rawUrl);
-    if (parsed.password) parsed.password = '****';
-    if (parsed.username) parsed.username = '****';
+    if (parsed.password) parsed.password = "****";
+    if (parsed.username) parsed.username = "****";
     return parsed.toString();
   } catch {
-    return '[unparseable]';
+    return "[unparseable]";
   }
 }
 
@@ -326,12 +354,12 @@ async function startServer() {
 
 if (require.main === module) {
   startServer().catch((err) => {
-    logger.error('Startup failed', { error: err.message });
+    logger.error("Startup failed", { error: err.message });
     process.exit(1);
   });
 
-  process.on('SIGTERM', shutdown('SIGTERM'));
-  process.on('SIGINT', shutdown('SIGINT'));
+  process.on("SIGTERM", shutdown("SIGTERM"));
+  process.on("SIGINT", shutdown("SIGINT"));
 
   // Last-resort safety net for errors that escape all per-job try/catch blocks.
   // These handlers do not replace the existing error handling in priceRefresh.js,
@@ -340,22 +368,22 @@ if (require.main === module) {
   // unhandledRejection: Node >=20 exits by default; we match that behavior but
   // run the cleanup sequence first so Redis connections and in-flight jobs are
   // shut down cleanly rather than abandoned abruptly.
-  process.on('unhandledRejection', (reason) => {
-    logger.error('Unhandled promise rejection — initiating graceful shutdown', {
+  process.on("unhandledRejection", (reason) => {
+    logger.error("Unhandled promise rejection — initiating graceful shutdown", {
       reason: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
     });
-    shutdown('unhandledRejection')();
+    shutdown("unhandledRejection")();
   });
 
   // uncaughtException: the process heap is in an undefined state after this event.
   // Log and shut down; never swallow and continue running in a potentially corrupt state.
-  process.on('uncaughtException', (err) => {
-    logger.error('Uncaught exception — initiating graceful shutdown', {
+  process.on("uncaughtException", (err) => {
+    logger.error("Uncaught exception — initiating graceful shutdown", {
       error: err.message,
       stack: err.stack,
     });
-    shutdown('uncaughtException')();
+    shutdown("uncaughtException")();
   });
 }
 

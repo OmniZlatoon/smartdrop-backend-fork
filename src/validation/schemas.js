@@ -112,6 +112,11 @@ const keyCreateBodySchema = z.object({
   tier: z.enum(Object.keys(config.apiKeyRateLimit.tiers)).optional(),
 });
 
+const keyRotateBodySchema = z.object({
+  // Preserves label and scopes from the old key, but allows overriding tier
+  tier: z.enum(Object.keys(config.apiKeyRateLimit.tiers)).optional(),
+});
+
 const alertCreateBodySchema = z.object({
   asset: assetCodeSchema.refine(
     (code) =>
@@ -305,6 +310,7 @@ module.exports = {
   assetCodeSchema,
   httpUrlSchema,
   keyCreateBodySchema,
+  keyRotateBodySchema,
   optionalIssuerSchema,
   paginationQuerySchema,
   priceParamsSchema,
