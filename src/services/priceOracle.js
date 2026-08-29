@@ -15,7 +15,7 @@ const breakerOptions = config.price.circuitBreaker;
 // upstream sources (CoinGecko, CoinMarketCap, Stellar DEX) on a cache miss.
 const inFlight = new Map();
 
-const SOURCES = [
+const ALL_SOURCES = [
   {
     name: 'stellar_dex',
     fetch: stellarDex.fetchPrice,
@@ -37,6 +37,18 @@ const SOURCES = [
     getCircuitState: coinmarketcap.getCircuitState,
   },
 ];
+
+function sortByPriority(sources, priority) {
+  if (!priority || priority.length === 0) return sources;
+  const order = new Map(priority.map((name, i) => [name, i]));
+  return [...sources].sort((a, b) => {
+    const ia = order.has(a.name) ? order.get(a.name) : Infinity;
+    const ib = order.has(b.name) ? order.get(b.name) : Infinity;
+    return ia - ib;
+  });
+}
+
+const SOURCES = sortByPriority(ALL_SOURCES, config.price.sourcePriority);
 
 /**
  * Circuit-breaker state for every source that has one (currently coingecko
@@ -152,7 +164,36 @@ function resetCircuitBreakers() {
   }
 }
 
+const QUERIED_ASSETS_KEY = 'queried_assets';
+
+async function recordQueriedAsset(assetCode, issuer = null) {
+  try {
+    if (!cache.isConnected()) return;
+    const redis = cache.getClient();
+    const key = issuer ? `${assetCode}:${issuer}` : assetCode;
+    await redis.sadd(QUERIED_ASSETS_KEY, key);
+  } catch (err) {
+    logger.warn('Failed to record queried asset', { assetCode, issuer, error: err.message });
+  }
+}
+
+async function getQueriedAssets() {
+  try {
+    if (!cache.isConnected()) return [];
+    const redis = cache.getClient();
+    const members = await redis.smembers(QUERIED_ASSETS_KEY);
+    return (members || []).map((entry) => {
+      const [code, issuer] = entry.split(':');
+      return { code, issuer: issuer || null };
+    });
+  } catch (err) {
+    logger.warn('Failed to fetch queried assets', { error: err.message });
+    return [];
+  }
+}
+
 async function getPrice(assetCode, issuer = null) {
+  recordQueriedAsset(assetCode, issuer);
   const cacheKey = buildCacheKey(assetCode, issuer);
   let redisUnavailable = false;
 
@@ -365,6 +406,8 @@ module.exports = {
   getCircuitStates,
   resetCircuitBreakers,
   refreshAllCachedPrices,
+  getQueriedAssets,
+  recordQueriedAsset,
   // Internal helpers exported for unit testing.
   median,
   detectAnomaly,

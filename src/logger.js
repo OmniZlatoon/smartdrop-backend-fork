@@ -22,7 +22,21 @@ const useJsonFormat = logFormat === 'json';
 
 // ==================== REQUEST CONTEXT ====================
 const requestIdFormat = winston.format((info) => {
-  info.requestId = requestContext.getStore()?.requestId ?? 'system';
+  const requestId = requestContext.getStore()?.requestId ?? 'system';
+  info.requestId = requestId;
+  // snake_case alias so structured log output matches the request_id field
+  // name used on delivery records and in API responses (issue #250).
+  // `requestId` is kept for existing dashboards and queries.
+  if (info.request_id === undefined) info.request_id = requestId;
+  return info;
+});
+
+const errorTrackerFormat = winston.format((info) => {
+  if (info.level === 'error') {
+    const errorObj = info.error instanceof Error ? info.error : (info.stack ? info : new Error(info.message || 'Logged Error'));
+    const { level, message, timestamp, ...extra } = info;
+    require('./services/errorTracker').captureException(errorObj, extra);
+  }
   return info;
 });
 
@@ -32,6 +46,7 @@ const baseFormats = [
   winston.format.errors({ stack: true }),
   requestIdFormat(),
   redactFormat(),
+  errorTrackerFormat(),
 ];
 
 // ==================== JSON FORMAT ====================
@@ -45,7 +60,9 @@ const prettyFormat = winston.format.combine(
   ...baseFormats,
   winston.format.colorize(),
   winston.format.printf(({ timestamp, level, message, stack, ...meta }) => {
-    const { service, version: ver, ...rest } = meta;
+    // request_id is a snake_case alias of requestId (issue #250); printing
+    // both would duplicate the same value in every pretty-formatted line.
+    const { service, version: ver, request_id: _requestIdAlias, ...rest } = meta;
     const metaStr = Object.keys(rest).length
       ? ` ${JSON.stringify(rest)}`
       : '';
