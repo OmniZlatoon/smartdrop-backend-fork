@@ -83,7 +83,17 @@ function createLeaderElection(jobName, opts = {}) {
   let stateChangeHandler = null;
 
   function notifyStateChange() {
-    if (typeof stateChangeHandler === 'function') stateChangeHandler();
+    if (typeof stateChangeHandler !== 'function') return;
+
+    try {
+      stateChangeHandler();
+    } catch (err) {
+      logger.error('Leader state-change callback failed', {
+        job: jobName,
+        instanceId,
+        error: err.message,
+      });
+    }
   }
 
   /**
@@ -189,14 +199,15 @@ function createLeaderElection(jobName, opts = {}) {
     leader = false;
     acquiredAt = null;
     lastRenewedAt = null;
+    notifyStateChange();
   }
 
   /**
    * Start the periodic renewal loop.
    */
   function startRenewLoop(onStateChange) {
+    if (typeof onStateChange === 'function') stateChangeHandler = onStateChange;
     if (renewTimer) return;
-    stateChangeHandler = onStateChange;
 
     // Try to acquire immediately on start
     tryAcquire().catch((err) => {

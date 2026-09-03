@@ -490,7 +490,11 @@ Register endpoints that receive HTTP POST callbacks when SmartDrop indexes contr
 
 | Event | Status | Description |
 |-------|--------|-------------|
+| `airdrop.created` | *Planned* | A new airdrop was created (not yet implemented) |
+| `airdrop.executing` | *Planned* | An airdrop began execution (not yet implemented) |
+| `airdrop.completed` | *Planned* | An airdrop completed successfully (not yet implemented) |
 | `airdrop.failed` | **Active** | Fired automatically when an airdrop expires |
+| `recipient.claimed` | *Planned* | A recipient claimed an airdrop (not yet implemented) |
 | `price.alert` | **Active** | Existing price-alert event |
 | `pool.created` | *Planned* | A new farming pool was created on-chain (not yet implemented) |
 | `pool.assets_locked` | *Planned* | Assets were locked into a pool (not yet implemented) |
@@ -531,7 +535,7 @@ POST /api/v1/webhooks/:id/test
 Sends a synthetic `pool.assets_locked` payload to the registered URL and returns the resulting delivery summary. Limited to 5 calls/min/IP by default.
 
 > [!IMPORTANT]
-> A successful test delivery only confirms that the webhook URL can successfully receive deliveries from the service. It does **not** imply that the subscribed event type will ever fire for real. For example, `pool.assets_locked` is a planned event and is not yet implemented (it will never fire in production). Only `airdrop.failed` and `price.alert` are actively dispatched today.
+> A successful test delivery only confirms that the webhook URL can successfully receive deliveries from the service. It does **not** imply that the subscribed event type will ever fire for real. For example, `pool.assets_locked` is a planned event and will not fire until it is implemented. Only `airdrop.failed` and `price.alert` are actively dispatched today.
 
 #### Inspect deliveries (admin dashboard feed)
 ```

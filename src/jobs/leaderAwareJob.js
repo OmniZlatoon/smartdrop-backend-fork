@@ -32,6 +32,8 @@ function makeLeaderAwareJob({ job, jobName, leaderElection, logger }) {
   let leadershipLostWhileRunning = false;
   let started = false;
   let checkInterval = null;
+  let stopPromise = null;
+  let restartAfterStop = false;
 
   /**
    * Handle acquiring leadership: start the underlying job.
@@ -72,6 +74,10 @@ function makeLeaderAwareJob({ job, jobName, leaderElection, logger }) {
    */
   function start() {
     if (started) return;
+    if (stopPromise) {
+      restartAfterStop = true;
+      return;
+    }
 
     started = true;
     manualStop = false;
@@ -109,21 +115,33 @@ function makeLeaderAwareJob({ job, jobName, leaderElection, logger }) {
    * Stop the leader-election loop and the underlying job.
    */
   async function stop() {
+    if (stopPromise) return stopPromise;
+
     manualStop = true;
-    started = false;
-    if (checkInterval) {
-      clearInterval(checkInterval);
-      checkInterval = null;
-    }
-    // Release the lease and stop the renewal loop
-    await leaderElection.stopRenewLoop();
+    stopPromise = (async () => {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        checkInterval = null;
+      }
+      // Release the lease and stop the renewal loop before resetting state.
+      await leaderElection.stopRenewLoop();
 
-    if (underlyingStarted) {
-      job.stop();
-      underlyingStarted = false;
-    }
+      if (underlyingStarted) {
+        job.stop();
+        underlyingStarted = false;
+      }
 
-    logger.info('Leader-aware job stopped', { job: jobName });
+      started = false;
+      logger.info('Leader-aware job stopped', { job: jobName });
+    })().finally(() => {
+      stopPromise = null;
+      if (restartAfterStop) {
+        restartAfterStop = false;
+        start();
+      }
+    });
+
+    return stopPromise;
   }
 
   /**

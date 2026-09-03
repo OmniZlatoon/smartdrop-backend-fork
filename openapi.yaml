@@ -736,7 +736,7 @@ components:
         SmartDrop webhook events.
 
         **Active / implemented events:**
-        - `airdrop.failed` (fired when an airdrop expires)
+        - `airdrop.failed` (fired when an airdrop expires or encounters another failure path)
         - `price.alert` (fired when a price alert triggers)
 
         **Planned / not yet implemented events:**
