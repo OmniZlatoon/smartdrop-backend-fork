@@ -35,6 +35,13 @@ function makeLeaderAwareJob({ job, jobName, leaderElection, logger }) {
   let stopPromise = null;
   let restartAfterStop = false;
 
+  // Capture the true originals once at construction so start()/stop() cycles
+  // never layer wrappers on top of previous wrappers (#119).
+  const trueTryAcquire = leaderElection.tryAcquire.bind(leaderElection);
+  const trueRenew = leaderElection.renew.bind(leaderElection);
+  const trueStartRenewLoop = leaderElection.startRenewLoop.bind(leaderElection);
+  const trueStopRenewLoop = leaderElection.stopRenewLoop.bind(leaderElection);
+
   /**
    * Handle acquiring leadership: start the underlying job.
    */
@@ -112,7 +119,8 @@ function makeLeaderAwareJob({ job, jobName, leaderElection, logger }) {
   }
 
   /**
-   * Stop the leader-election loop and the underlying job.
+   * Stop the leader-election loop and restore original methods so a
+   * subsequent start() wraps from a clean baseline (#119).
    */
   async function stop() {
     if (stopPromise) return stopPromise;
