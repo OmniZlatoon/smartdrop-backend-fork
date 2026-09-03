@@ -260,6 +260,34 @@ describe('Leader Election', () => {
         await wrapped.stop();
       }
     });
+
+    test('starting a wrapped job twice does not duplicate its lifecycle', async () => {
+      const { makeLeaderAwareJob } = require('../src/jobs/leaderAwareJob');
+      const job = {
+        start: jest.fn(),
+        stop: jest.fn(),
+      };
+      const wrapped = makeLeaderAwareJob({
+        job,
+        jobName: 'idempotent_test',
+        leaderElection: createLeaderElection('idempotent_test', {
+          instanceId: 'idempotent-instance',
+          leaseTtlMs: 500,
+          renewIntervalMs: 200,
+        }),
+        logger,
+      });
+
+      wrapped.start();
+      wrapped.start();
+      await wrapped.getLeaderElection().tryAcquire();
+      await jest.advanceTimersByTimeAsync(250);
+
+      expect(job.start).toHaveBeenCalledTimes(1);
+
+      await wrapped.stop();
+      expect(job.stop).toHaveBeenCalledTimes(1);
+    });
   });
 
   /* ------------------------------------------------------------------ */
